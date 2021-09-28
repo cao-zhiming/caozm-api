@@ -1,7 +1,5 @@
 import qs from 'qs'
 
-// import all handlers from different platforms into a global object
-import { services } from './serviceProviders'
 
 //! register sources that return non-numbers here, if a source doesn't return a number, we will handle it separately
 const singleOnlySources = ['afdianIncome']
@@ -26,9 +24,7 @@ function parseRequest(req) {
       singleOnly: false,
       singleOnlySrc: '',
       // service providers
-      source: [],
-      // query keys (feed link for RSS; username or slug for others)
-      queryKey: [],
+      data: [],
     }
 
     const url = new URL(req)
@@ -42,17 +38,15 @@ function parseRequest(req) {
 
     // if source is null or query key is null, send invalid request
     if (
-      query.source === '' ||
-      typeof query.source === 'undefined' ||
-      query.queryKey === '' ||
-      typeof query.queryKey === 'undefined'
+      query.data === '' ||
+      typeof query.data === 'undefined'
     ) {
       params.valid = false
       return params
     }
 
     // if returned value is not a number, only single requests are supported
-    if (typeof query.source !== 'string' && query.source.length > 1) {
+    if (typeof query.data !== 'string' && query.data.length > 1) {
       query.source.forEach(src => {
         if (singleOnlySources.includes(src)) {
           params.valid = false
@@ -64,47 +58,11 @@ function parseRequest(req) {
     }
 
     // parse source and queryString in query string
-    if (typeof query.source === 'string' && typeof query.queryKey === 'string') {
+    if (typeof query.data === 'string') {
       // single query key, maybe multiple sources
-      params.source = query.source.split('|')
+      params.source = query.data.split('|')
 
-      if (params.source.length === 1) {
-        // single source
-        params.singleOnly = true
-        // populate query key list (we takes a list as input, even when there's only one query)
-        params.queryKey.push(query.queryKey)
-      } else {
-        // multiple sources
-        params.source.forEach(src => {
-          // detect if a singleOnly source is requested inside multiple requests
-          if (singleOnlySources.includes(src)) {
-            params.valid = false
-            params.singleOnly = true
-            params.singleOnlySrc = src
-          }
-          // populate query key list
-          params.queryKey.push(query.queryKey)
-        })
-      }
-    } else if (query.source.length > 1 || query.queryKey.length > 1) {
-      // multiple query key, multiple sources
-      if (query.source.length === query.queryKey.length) {
-        params.source = query.source
-        params.queryKey = query.queryKey
-      } else {
-        // source and queryKey index doesn't match
-        params.valid = false
-      }
-    } else {
-      params.valid = false
-    }
-    console.log(params)
-    return params
-  } catch (error) {
-    console.error(error)
-    return null
-  }
-}
+    
 
 /**
  * Fetch subscriber stats from list of service providers
@@ -113,56 +71,12 @@ function parseRequest(req) {
  * @param {list} sources List of service providers to query
  * @param {list} queryKey Target query key list
  */
-async function fetchStats(singleOnly, sources, queryKey) {
+async function fetchStats(sources) {
   // function's returning value
   const fetchStatsRes = {
-    totalSubs: 0,
-    subsInEachSource: {},
-    failedSources: {},
+    data: 0,
   }
-
-  // reference handlers
-  const handlers = services()
-
-  // construct big concurrent promise array
-  const resPromise = []
-  sources.forEach((source, i) => {
-    // init source specific array with 0 subs each
-    fetchStatsRes.subsInEachSource[source] = 0
-    // create promise array
-    if (source in handlers) {
-      resPromise.push(handlers[source](queryKey[i]))
-    } else {
-      // not implemented
-      fetchStatsRes.failedSources[source] = 'Not implemented'
-    }
-  })
-
-  // parallel requests take off!
-  await Promise.allSettled(resPromise).then(sourceReturns => {
-    sourceReturns.forEach(res => {
-      if (res.status === 'fulfilled') {
-        // promise fulfilled (fetch succeeded)
-        if (res.value.failed) {
-          // error occured on fetch end
-          fetchStatsRes.failedSources[res.value.source] = res.value.failedMsg
-        } else {
-          // successfully fetched subs
-          if (singleOnly) {
-            // if requested source is singleOnly source, we won't add up all sources
-            fetchStatsRes.totalSubs = res.value.subs
-          } else {
-            fetchStatsRes.totalSubs += res.value.subs
-          }
-          fetchStatsRes.subsInEachSource[res.value.source] = res.value.subs
-        }
-      }
-      // promise rejected (fetch failed)
-      if (res.status === 'rejected') {
-        fetchStatsRes.failedSources['substats-error'] = res.reason
-      }
-    })
-  })
+// age cal
   return fetchStatsRes
 }
 
